@@ -68,7 +68,9 @@ test('a selected app opens normally and Back can leave without restarting the da
   const { page, errors } = await openApp(false);
   try {
     await page.waitForSelector('#splash.gone');
-    await page.locator('#appsRow [data-launch="SampleApp1.Sample"]').click();
+    // The TV UI activates its focused tile with the remote's OK key; it has no mouse handler.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
     assert.deepEqual(await page.evaluate(() => window.appCalls), ['SampleApp1.Sample']);
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
