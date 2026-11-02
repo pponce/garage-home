@@ -27,8 +27,6 @@
     <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
     <tizen:privilege name="http://tizen.org/privilege/alarm"/>
 
-    <!-- Start early in boot (like Netflix/YouTube), so Garage Home and then Vetro come up ~1 minute sooner. -->
-    <tizen:metadata key="http://samsung.com/tv/metadata/appbootingsupport" value=""/>
     <tizen:profile name="tv-samsung"/>
     <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
 </widget>

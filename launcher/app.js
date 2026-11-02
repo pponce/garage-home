@@ -187,22 +187,6 @@
   }
   function pressKey(key) { return vetro('/control', {key: key}); }
 
-  // With our certificate Vetro's service does not start at boot. If it is down, start it:
-  // directly if the TV allows it, otherwise by opening Vetro's app, which starts it and closes again.
-  function ensureVetro() {
-    if (!hasTizen) return;
-    var last = store('gh.vetroKick') || 0;
-    if (Date.now() - last < 2 * 60000) return;
-    fetch(VETRO + '/status').catch(function () {
-      store('gh.vetroKick', Date.now());
-      var viaApp = function () {
-        var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null,
-          [new tizen.ApplicationControlData('action', ['start-service'])]);
-        try { tizen.application.launchAppControl(ctrl, 'vetrotvapp.app', function () {}, function () {}); } catch (e) {}
-      };
-      try { tizen.application.launch('vetrotvapp.svc', function () {}, viaApp); } catch (e) { viaApp(); }
-    });
-  }
   // Plain-language reason a Vetro request failed.
   function vetroProblem(e) {
     return /root agent/.test(e && e.message) ? "Vetro isn't connected to root. Set the TV's Host PC IP to 127.0.0.1."
@@ -1199,7 +1183,7 @@
     okDown = 0;
   });
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { tick(); getApps(render); checkSleepRequest(); resetIdle(); ensureVetro(); checkPairing(); }
+    if (!document.hidden) { tick(); getApps(render); checkSleepRequest(); resetIdle(); checkPairing(); }
     else {
       // In the background (another app in front): free what is quick to rebuild when we come back.
       if (ambientOn) stopAmbient();
@@ -1223,13 +1207,5 @@
   checkSleepRequest();
   resetIdle();
   setInterval(checkPairing, 3000);
-  ensureVetro();
-  // At boot the TV pre-starts Garage Home hidden (appbootingsupport), and Autorun Last App doesn't bring it
-  // forward. Started hidden = pre-started: ask the TV to show us, so boot lands here instead of TV channels.
-  if (hasTizen && document.hidden) {
-    setTimeout(function () {
-      try { tizen.application.launch(tizen.application.getCurrentApplication().appInfo.id, function () {}, function () {}); } catch (e) {}
-    }, 300);
-  }
   setTimeout(function () { $('splash').classList.add('gone'); }, 1800);
 })();
