@@ -27,6 +27,8 @@ Local Chromium cannot start because this execution environment denies its proces
 
 ## Next steps
 
+`tools/install-vetro-controls.py` provides installation for the existing launcher-playground signing setup. It pins the tested widget revision above, reuses the existing Partner profile and signing helper, preserves packaged configuration, and checks all installed file hashes. A saved record prevents another installation after an uncertain response. It uses Vetro's `tools/vetro_owner.py` from revision `f1eeaa30165a98a27502fc3f7b51a77db5238117` beside the installer. Seven installer tests cover transfer mismatch, timeout verification, rerun handling, author-certificate comparison and incomplete records; all pass locally. No TV installation has been performed from this environment.
+
 1. Use the unsigned-widget artifact from the successful workflow above, or build the recorded code revision locally with `python3 tools/build-manual.py`.
 2. Sign the widget using the existing author certificate covering the target TV, then update in place. Do not uninstall to update.
 3. Approve the selected controls in Vetro and follow `docs/VETRO-CONTROLS.md` on the TV.
