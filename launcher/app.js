@@ -10,7 +10,7 @@
   var ORDER = [/digitalb/i, /netflix/i, /disney/i, /prime/i, /youtube/i, /klani/i, /spotify/i, /skyshowtime/i];
 
   var hasTizen = typeof tizen !== 'undefined';
-  // Vetro's local service (root). Garage Home uses it for keys, brightness and launching system apps.
+  // Vetro's local service. Controls use scoped access; system-app launch fallback uses HTTP.
   // Optional overrides (e.g. from the desktop preview): window.GARAGE_CONFIG = {tvIp: '…'}.
   var CONFIG = window.GARAGE_CONFIG || {};
   var TV_LAN_IP = CONFIG.tvIp || '';   // only a fallback: the TV normally reports its own address
@@ -157,7 +157,7 @@
 
   var TV_ROW = [
     {id: 'com.samsung.tv.coba.livetv', name: 'Live TV', icon: 'tv'},
-    {id: 'key:KEY_SOURCE', name: 'Sources', icon: 'source'},
+    {id: 'garage:sources', name: 'Sources', icon: 'source', action:openSources},
     {id: 'com.samsung.tv.gallery', name: 'Gallery', icon: 'gallery'},
     {id: 'org.tizen.browser', name: 'Internet', icon: 'web'},
     {id: 'com.samsung.tv.store', name: 'App store', icon: 'store'},
@@ -192,6 +192,7 @@
       crypto:window.crypto, pollReply:GarageVetroTransport.readReply}); }
   });
   var sleepTimer = GarageSleepTimer.create({storage:window.localStorage, tizen:window.tizen, crypto:window.crypto});
+  var sources = GarageSources.create({tizen:window.tizen}), sourceModal = null;
 
   // Plain-language reason a Vetro request failed.
   function vetroProblem(e) {
@@ -350,8 +351,12 @@
     userApps.forEach(function (a) { row.appendChild(tileFor(a)); });
 
     var tv = $('tvRow'); tv.innerHTML = '';
-    TV_ROW.filter(function (t) { return !hasTizen || installed[t.id] || /^key:/.test(t.id); })
-      .forEach(function (t) { tv.appendChild(tileFor({id: t.id, name: t.name, svg: t.icon})); });
+    TV_ROW.filter(function (t) { return !hasTizen || installed[t.id] || t.action; })
+      .forEach(function (t) {
+        var tile = tileFor({id:t.id,name:t.name,svg:t.icon});
+        if (t.action) tile._action = t.action;
+        tv.appendChild(tile);
+      });
 
     // The Apps grid repeats every tile (and decodes every icon again): build it only while it's open.
     if (state.page === 'apps') buildGrid(); else $('appsGrid').innerHTML = '';
@@ -547,10 +552,9 @@
     launch(id, name);
   }
   // Samsung's system apps (Settings, Live TV...) ignore launches from a Public-certificate app, often while
-  // reporting success, so they go through Vetro (root) first. "key:NAME" ids press a remote key instead.
+  // reporting success, so they go through Vetro (root) first.
   var SYSTEM_APP = /^(org\.tizen\.|com\.samsung\.tv\.)/;
   function launch(id, name) {
-    if (/^key:/.test(id)) return remoteKey(id.slice(4), name);
     if (!hasTizen) return toast('Opening ' + (name || id));
     var viaTizen = function (fallback) {
       try { tizen.application.launch(id, function () {}, fallback); } catch (e) { fallback(); }
@@ -564,32 +568,51 @@
     else viaTizen(function () { viaVetro(); });
   }
 
-  // Presses a remote key through the TV's own remote-control API (port 8001), like a phone remote.
-  // The TV asks once to allow "Garage Home"; the pairing token is kept.
-  function remoteKey(key, name) {
-    if (!hasTizen) return toast('Pressing ' + (name || key));
-    var token = store('gh.remoteToken'), done = false;
-    var url = 'ws://127.0.0.1:8001/api/v2/channels/samsung.remote.control?name=' + btoa('Garage Home') +
-      (token ? '&token=' + encodeURIComponent(token) : '');
-    var ws;
-    try { ws = new WebSocket(url); } catch (e) { return toast((name || key) + " didn't work."); }
-    var finish = function (msg) { if (done) return; done = true; if (msg) toast(msg); try { ws.close(); } catch (e) {} };
-    var timer = setTimeout(function () {
-      finish((name || key) + " didn't work. Allow Garage Home on the TV, or turn on IP Remote in Settings → General → Network → Expert settings.");
-    }, 12000);
-    ws.onmessage = function (m) {
-      var d; try { d = JSON.parse(m.data); } catch (e) { return; }
-      if (d.event === 'ms.channel.connect') {
-        if (d.data && d.data.token) store('gh.remoteToken', d.data.token);
-        ws.send(JSON.stringify({method: 'ms.remote.control', params: {Cmd: 'Click', DataOfCmd: key, Option: 'false', TypeOfRemote: 'SendRemoteKey'}}));
-        clearTimeout(timer);
-        setTimeout(function () { finish(); }, 600);
-      } else if (d.event === 'ms.channel.unauthorized') {
-        clearTimeout(timer);
-        finish('The TV blocked Garage Home. Allow it in Settings → General → External Device Manager → Device Connection Manager.');
+  /* ---------- TV inputs ---------- */
+  function openSources() {
+    if (sources.busy) return toast(sources.errorMessage({code:'busy'}));
+    openModal('<h3>Sources</h3><p class="m-text" id="sourceNote" role="status">Reading TV inputs…</p>' +
+      '<div class="m-scroll" id="sourceList"></div>' +
+      '<div class="m-item m-row"><span>Refresh</span></div>' +
+      '<div class="m-item m-row"><span>Close</span></div>', {cls:'sources',onClose:function () { sourceModal = null; }});
+    var view = modal;
+    sourceModal = view;
+    bindItems([openSources,closeModal]);
+    sources.list().then(function (rows) {
+      if (modal !== view) return;
+      view.sources = rows;
+      $('sourceNote').textContent = rows.length ? 'Choose an input. Devices in standby may appear disconnected.' : 'No HDMI or Live TV inputs were reported.';
+      paintSources(view);
+    }).catch(function (error) {
+      if (modal === view) $('sourceNote').textContent = sources.errorMessage(error);
+    });
+  }
+  function paintSources(view) {
+    if (modal !== view) return;
+    $('sourceList').innerHTML = view.sources.map(function (source) {
+      return '<div class="m-item m-news" data-source="' + esc(source.id) + '"' +
+        (source.current ? ' aria-current="true"' : '') + '><b>' + esc(source.label) + '</b><span>' +
+        (source.current ? 'Selected input · ' : '') + (source.connected ? 'Connected' : 'No device detected') + '</span></div>';
+    }).join('');
+    bindItems(view.sources.map(function (source) { return function () { selectSource(source,view); }; }).concat([openSources,closeModal]));
+    var selected = view.sources.map(function (source) { return source.current; }).indexOf(true);
+    view.index = selected >= 0 ? selected : 0;
+    modalFocus();
+  }
+  function selectSource(source, view) {
+    if (sources.busy) return toast(sources.errorMessage({code:'busy'}));
+    $('sourceNote').textContent = 'Switching to ' + source.label + '…';
+    sources.select(source.id,function () { return modal === view && !document.hidden; }).then(function (result) {
+      if (modal !== view) return;
+      if (result.viewerSubmitted) { closeModal(); refocus(); toast(source.label + ' selected'); }
+      else {
+        view.sources.forEach(function (item) { item.current = item.id === result.source.id; });
+        paintSources(view);
+        $('sourceNote').textContent = source.label + ' selected. The TV view could not be opened. Open Live TV from Samsung Home.';
       }
-    };
-    ws.onerror = function () { clearTimeout(timer); finish((name || key) + " didn't work. The TV's remote control service isn't available."); };
+    }).catch(function (error) {
+      if (modal === view && error.code !== 'cancelled') $('sourceNote').textContent = sources.errorMessage(error);
+    });
   }
 
   /* ---------- modal sheets (PIN pad, app menu, news) ---------- */
@@ -1239,6 +1262,7 @@
     if (!document.hidden) { tick(); getApps(render); checkSleepRequest(); resetIdle(); }
     else {
       if (sleepModal && modal === sleepModal) closeModal();
+      if (sourceModal && modal === sourceModal) closeModal();
       // In the background (another app in front): free what is quick to rebuild when we come back.
       if (ambientOn) stopAmbient();
       $('heroArtBox').innerHTML = '';

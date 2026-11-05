@@ -189,6 +189,116 @@ test('a due sleep alarm sends standby once and cannot replay after another foreg
     assert.deepEqual(errors,[]);
   }finally{await page.close();}
 });
+
+async function mockSources(page) {
+  await page.evaluate(()=>{
+    window.inputCalls=[];window.inputHold=false;window.inputReadError=false;window.viewerFails=false;
+    window.pendingSourceReads=[];window.inputCurrent={type:'HDMI',number:2};
+    window.inputInfo={connected:[{type:'HDMI',number:2},{type:'HDMI',number:1},{type:'TV',number:0}],
+      disconnected:[{type:'HDMI',number:3},{type:'HDMI',number:4}]};
+    window.WebSocket=function(){window.inputCalls.push({op:'websocket'});throw Error('Unexpected remote connection');};
+    window.tizen.systeminfo={getPropertyValue:(name,done,fail)=>{
+      window.inputCalls.push({op:'read',name});
+      if(name!=='VIDEOSOURCE'||window.inputReadError){fail(Error('Input read unavailable'));return;}
+      if(window.inputHold)window.pendingSourceReads.push(()=>done(window.inputInfo));
+      else done(window.inputInfo);
+    }};
+    window.tizen.tvwindow={getSource:()=>window.inputCurrent,setSource:(source,done,fail,type)=>{
+      window.inputCalls.push({op:'switch',source,type});window.inputCurrent=source;done(source,'MAIN');
+    }};
+    window.tizen.application.launch=(id,done,fail)=>{
+      window.appCalls.push(id);
+      if(window.viewerFails){fail(Error('Viewer refused'));return;}
+      window.appHidden=true;document.dispatchEvent(new Event('visibilitychange'));done();
+    };
+    window.tizen.ApplicationControl=function(operation){this.operation=operation;};
+    window.tizen.application.launchAppControl=(control,id,done,fail)=>{
+      window.appCalls.push(id);fail(Error('Viewer refused'));
+    };
+  });
+}
+async function activateSources(page) {
+  await page.waitForSelector('#splash.gone');
+  for(let i=0;i<7&&!await page.locator('#tvRow .focused').count();i++)await page.keyboard.press('ArrowDown');
+  assert.ok(await page.locator('#tvRow .focused').count());
+  for(let i=0;i<12;i++)await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.locator('#tvRow .focused').getAttribute('data-name'),'Sources');
+  await page.keyboard.press('Enter');
+}
+test('Sources lists native inputs and the remote opens the selected input in the TV viewer',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);await mockSources(page);
+    await activateSources(page);
+    await page.waitForSelector('#sourceList [data-source="HDMI:4"]');
+    assert.equal(await page.locator('#sourceList .m-item').count(),5);
+    assert.equal(await page.locator('#sourceList .focused').getAttribute('data-source'),'HDMI:2');
+    assert.match(await page.locator('[data-source="HDMI:3"]').innerText(),/No device detected/);
+    await assertSheetFits(page);
+    assert.deepEqual(await page.evaluate(()=>window.appCalls),[]);
+    assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read']);
+    fs.mkdirSync(path.join(root,'../test-results'),{recursive:true});
+    await page.screenshot({path:path.join(root,'../test-results/sources.png')});
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>window.appCalls.includes('org.tizen.tv-viewer'));
+    assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read','read','switch']);
+    assert.equal(await page.evaluate(()=>window.inputCurrent.number),1);
+    assert.equal(await page.locator('#modal.show').count(),0);
+    assert.deepEqual(await page.evaluate(()=>window.vetroCalls),[]);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('Back during the input recheck prevents a delayed source change',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockSources(page);await activateSources(page);
+    await page.waitForSelector('#sourceList .m-item');
+    await page.evaluate(()=>{window.inputHold=true;});
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>window.pendingSourceReads.length===1);
+    await page.keyboard.press('Escape');
+    await page.evaluate(()=>window.pendingSourceReads.splice(0).forEach(f=>f()));
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator('#modal.show').count(),0);
+    assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read','read']);
+    assert.deepEqual(await page.evaluate(()=>window.appCalls),[]);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('failed source reads keep Refresh available and do not switch inputs',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockSources(page);
+    await page.evaluate(()=>{window.inputReadError=true;});
+    await activateSources(page);
+    await page.waitForFunction(()=>document.getElementById('sourceNote').textContent.includes('could not'));
+    assert.equal(await page.locator('#sourceList .m-item').count(),0);
+    await page.evaluate(()=>{window.inputReadError=false;});
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#sourceList [data-source="TV:0"]');
+    assert.ok(await page.evaluate(()=>window.inputCalls.every(c=>c.op==='read')));
+    assert.deepEqual(await page.evaluate(()=>window.appCalls),[]);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('a refused TV viewer leaves an accurate selected-input message and no hidden fallback',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);await mockSources(page);
+    await page.evaluate(()=>{window.viewerFails=true;});
+    await activateSources(page);
+    await page.waitForSelector('#sourceList .m-item');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.getElementById('sourceNote').textContent.includes('TV view could not be opened'));
+    assert.equal(await page.locator('#sourceList [aria-current="true"]').getAttribute('data-source'),'HDMI:1');
+    assert.deepEqual(await page.evaluate(()=>window.appCalls),['org.tizen.tv-viewer','org.tizen.tv-viewer']);
+    assert.deepEqual(await page.evaluate(()=>window.vetroCalls),[]);
+    assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read','read','switch']);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
 after(async () => {
   if (browser) await browser.close();
   if (server) await new Promise(resolve => server.close(resolve));

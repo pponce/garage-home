@@ -26,6 +26,10 @@ class ManualPackageTests(unittest.TestCase):
                 self.assertEqual(set(archive.namelist()), set(manual.FILES) | {"garage-config.js", "local-key.js"})
                 self.assertIn(b"window.GARAGE_LOCAL_KEY", archive.read("local-key.js"))
                 self.assertNotIn(b"picture.brightness", archive.read("garage-config.js"))
+                privileges = {item.get('name') for item in config.findall('t:privilege', manual.NS)}
+                self.assertIn('http://tizen.org/privilege/tv.window', privileges)
+                self.assertIn(b'<script src="tv-sources.js"></script>', archive.read('index.html'))
+                self.assertNotIn(b'KEY_SOURCE', archive.read('app.js'))
 
     def test_new_builds_have_independent_local_reply_keys(self):
         (ROOT / "dist").mkdir(exist_ok=True)

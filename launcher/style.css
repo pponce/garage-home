@@ -307,6 +307,8 @@ svg.ico { fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: 
 .sheet.news { width: 1120px; }
 .sheet.controls, .sheet.brightness { width: 1120px; max-width: calc(100vw - 160px); }
 .sheet.tasks .m-scroll { max-height: 480px; }
+.sheet.sources { width: 1000px; max-width: calc(100vw - 160px); }
+.sheet.sources .m-scroll { max-height: 460px; }
 .m-scroll { max-height: 640px; overflow-y: auto; }
 .m-scroll::-webkit-scrollbar { display: none; }
 .m-news { padding: 18px 24px; margin-top: 8px; }
