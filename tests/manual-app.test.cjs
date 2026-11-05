@@ -71,6 +71,11 @@ async function activateControl(page, name) {
   for(let i=0;i<index;i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
 }
+async function assertSheetFits(page) {
+  const box=await page.locator('#modal .sheet').boundingBox();
+  assert.ok(box && box.x>=60 && box.y>=60 && box.x+box.width<=1860 && box.y+box.height<=1020,
+    'the controls sheet fits within the TV screen margins');
+}
 test('remote control settings request only base permissions and brightness requires an explicit opt-in',async()=>{
   const {page,errors}=await openApp(false);
   try{
@@ -78,6 +83,7 @@ test('remote control settings request only base permissions and brightness requi
     assert.equal(await page.locator('[data-control="dim"]').count(),0);
     assert.equal(await page.locator('[data-control="bright"]').count(),0);
     await activateControl(page,'settings');
+    await assertSheetFits(page);
     await page.keyboard.press('Enter');
     await page.waitForFunction(()=>window.vetroCalls.some(c=>c.method==='access.request'));
     assert.deepEqual(await page.evaluate(()=>window.vetroCalls[0].params.scopes),['tasks.read','tasks.stop','remote.audio','power.off']);
@@ -85,6 +91,7 @@ test('remote control settings request only base permissions and brightness requi
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
     assert.match(await page.locator('#modal').innerText(),/Filmmaker Mode/);
+    await assertSheetFits(page);
     await page.keyboard.press('Enter');
     assert.equal(await page.locator('[data-control="dim"]').count(),1);
     assert.equal(await page.evaluate(()=>localStorage.getItem('gh.tvBrightness')),'true');
@@ -120,10 +127,9 @@ test('mute uses scoped audio and running apps require confirmed close before a s
   }finally{await page.close();}
 });
 test('sleep needs power permission; cancel and backgrounding prevent countdown shutdown',async()=>{
-  const {page,errors}=await openApp(false);
+  const {page,errors}=await openApp(false,true);
   try{
     await mockControls(page);
-    await page.clock.install();
     await page.clock.fastForward(2000);
     await page.evaluate(()=>{window.grants=['tasks.read'];});
     await activateControl(page,'sleep');
@@ -156,10 +162,9 @@ test('sleep needs power permission; cancel and backgrounding prevent countdown s
   }finally{await page.close();}
 });
 test('a due sleep alarm sends standby once and cannot replay after another foreground event',async()=>{
-  const {page,errors}=await openApp(false);
+  const {page,errors}=await openApp(false,true);
   try{
     await mockControls(page);
-    await page.clock.install();
     await page.clock.fastForward(2000);
     await activateControl(page,'sleep');
     await page.waitForFunction(()=>window.alarmCalls.length===1);
@@ -184,8 +189,10 @@ after(async () => {
   if (server) await new Promise(resolve => server.close(resolve));
 });
 
-async function openApp(hidden) {
+async function openApp(hidden, simulatedClock) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  page.setDefaultTimeout(10000);
+  if (simulatedClock) await page.clock.install();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/*', route => route.request().url().startsWith(address + '/') ? route.continue() : route.abort());

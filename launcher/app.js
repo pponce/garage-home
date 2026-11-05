@@ -810,7 +810,7 @@
       '<p class="m-text">Dimmer and Brighter change the TV’s picture brightness. The value can remain changed after you leave Garage Home, including while watching in Filmmaker Mode.</p>' +
       '<p class="m-text">After enabling, request access and approve brightness in Vetro. This does not change brightness now.</p>' +
       '<div class="m-item m-row"><span>Enable controls</span></div>' +
-      '<div class="m-item m-row"><span>Cancel</span></div>', {cls:'menu', onBack:openControls});
+      '<div class="m-item m-row"><span>Cancel</span></div>', {cls:'menu brightness', onBack:openControls});
     bindItems([function () {
       try { controls.setBrightnessEnabled(true); renderControls(); openControls(); }
       catch (_) { toast('The brightness preference could not be saved.'); }
