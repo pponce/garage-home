@@ -21,11 +21,13 @@ Restore task management, volume/mute and sleep timer through Vetro's app-permiss
 
 ## Validation and limitations
 
-Unit and packaging checks run locally. Local Chromium cannot start because this execution environment denies its process-singleton socket; browser verification runs in GitHub Actions. Record the final workflow outcome before installing. No physical TV installation or setting change has been performed as part of this implementation.
+Code revision: `86bcdeb45f2cd45105e34ee834cc10de5b75502f`. All 29 checks passed: 3 Python packaging checks and 26 Node checks, including 6 browser tests. The successful workflow is https://github.com/pponce/garage-home/actions/runs/42124228904 and includes the `GarageHome-manual-unsigned` widget artifact and `GarageHome-screen-checks` screenshot artifact. The packaged source was also checked against the final source locally.
+
+Local Chromium cannot start because this execution environment denies its process-singleton socket; browser verification ran in GitHub Actions. No physical TV installation or setting change has been performed as part of this implementation.
 
 ## Next steps
 
-1. Require the feature branch's Manual app workflow to pass and inspect its unsigned-widget artifact.
+1. Use the unsigned-widget artifact from the successful workflow above, or build the recorded code revision locally with `python3 tools/build-manual.py`.
 2. Sign the widget using the existing author certificate covering the target TV, then update in place. Do not uninstall to update.
 3. Approve the selected controls in Vetro and follow `docs/VETRO-CONTROLS.md` on the TV.
 4. Keep brightness disabled unless explicitly wanted. Device behavior, including Filmmaker Mode persistence, needs observation on the target TV.
