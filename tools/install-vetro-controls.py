@@ -20,13 +20,13 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 
-REVISION = '86bcdeb45f2cd45105e34ee834cc10de5b75502f'
+REVISION = 'e69b9deba26dda10bd25e8e2fe2ceececb0589ab'
 APP = 'GarageHome.launcher'
 ROOTS = ('/opt/usr/apps/GarageHome/res/wgt', '/usr/apps/GarageHome/res/wgt')
 FILES = (
     'config.xml', 'index.html', 'style.css', 'app.js', 'qrcode.js', 'app-icon.png', 'logo.png',
     'garage-config.js', 'local-key.js', 'vetro-access-client.js', 'vetro-transport.js',
-    'vetro-controls.js', 'sleep-timer.js', 'vendor/sha256.js', 'vendor/sha256.LICENSE.txt',
+    'vetro-controls.js', 'sleep-timer.js', 'tv-sources.js', 'vendor/sha256.js', 'vendor/sha256.LICENSE.txt',
     'vendor/VETRO-LICENSE.txt', 'vendor/GLASS-LICENSE.txt', 'service/index.js',
     'service/server.js', 'service/vetro-replies.js', 'service/local-addresses.js'
 )
@@ -175,7 +175,7 @@ class Installer:
     def finish(self, record):
         record['complete'] = True
         self.save(record)
-        self.say('INSTALLED: all 21 Garage Home files match the signed update.')
+        self.say('INSTALLED: all ' + str(len(FILES)) + ' Garage Home files match the signed update.')
         try:
             target = record['target']
             self.remote('rm -f ' + shlex.quote(target) + ' && rmdir ' + shlex.quote(str(Path(target).parent)))
@@ -185,7 +185,9 @@ class Installer:
         self.script('/usr/bin/app_launcher -k GarageHome.launcher >/dev/null 2>&1\n'
                     '/usr/bin/app_launcher -k GarageHome.Controls >/dev/null 2>&1\n'
                     '/usr/bin/app_launcher -s GarageHome.launcher')
-        self.say('In Garage Home: Vetro controls > Connect / request access.')
+        self.say('In Garage Home: open Sources and choose a connected HDMI input to check full-screen video and audio.')
+        self.say('Sources does not require Vetro app permissions.')
+        self.say('After an app update, renew the Vetro controls approval: Vetro controls > Connect / request access.')
         self.say('Approve Garage Home in Vetro App permissions, then choose Refresh access in Garage Home.')
         self.say('Brightness controls remain off unless you explicitly enable them.')
 

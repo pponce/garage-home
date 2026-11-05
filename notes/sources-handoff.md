@@ -21,4 +21,10 @@ Replace the Sources remote-key shortcut with an input list inside Garage Home. U
 
 ## Validation and next steps
 
-The new unit suite covers native listing, fresh selection, disconnected ports, changed reports, cancellation, duplicate presses, readback and viewer failures. Browser tests exercise the Sources tile with remote keys, error recovery, cancellation and layout. Complete CI and record the tested source revision, then pin the existing installer to it with the new packaged file included. Use the signed update on the TV and follow the Sources checklist in `docs/VETRO-CONTROLS.md`; physical full-screen behavior is not yet verified.
+- Source revision: `e69b9deba26dda10bd25e8e2fe2ceececb0589ab`.
+- All 59 tests and the unsigned 1.3.1 widget build passed in [CI run 42131157246](https://github.com/pponce/garage-home/actions/runs/42131157246).
+- The new unit suite covers native listing, fresh selection, disconnected ports, changed reports, cancellation, duplicate presses, readback and viewer failures. Browser tests exercise the Sources tile with remote keys, error recovery, cancellation and screen margins.
+- The installer pins that tested source revision, expects all 22 payload files and retains the validated signing/ZIP checks. Its added package-coverage test brings the Python suite to 16 passing tests.
+- The installer reuses the saved author certificate and configuration, updates in place and verifies installed file hashes. It does not change Vetro or Developer Mode settings. An ambiguous install result is verified without repeating the installation.
+- Next: run the signed update, then follow the Sources checklist in `docs/VETRO-CONTROLS.md`. Confirm the actual connected/disconnected port list, full-screen HDMI video/audio, Live TV, Back and current-input marker. Physical full-screen behavior is not yet verified.
+- After the update, request and approve Garage Home's Vetro control permissions again. Sources itself needs no Vetro permission. Brightness remains optional and no playback buttons are added.

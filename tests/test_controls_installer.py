@@ -120,6 +120,15 @@ class SignedWidgetTests(unittest.TestCase):
     def setUp(self):
         self.contents = {name: ('payload: ' + name).encode() for name in module.FILES}
 
+    def test_built_widget_has_every_payload_expected_by_the_installer(self):
+        builder_spec = importlib.util.spec_from_file_location('garage_builder',
+            Path(__file__).resolve().parents[1] / 'tools/build-manual.py')
+        builder = importlib.util.module_from_spec(builder_spec)
+        builder_spec.loader.exec_module(builder)
+        with tempfile.TemporaryDirectory() as temporary:
+            with zipfile.ZipFile(builder.build(Path(temporary))) as bundle:
+                self.assertEqual(set(bundle.namelist()), set(module.FILES))
+
     def widget(self, directories=True, omit=None, extra=None, change=None):
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, 'w') as bundle:
