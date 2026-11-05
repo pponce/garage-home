@@ -852,6 +852,9 @@
     } catch (_) { toast('The sleep alarm could not be verified. The TV will stay on.'); }
   }
   function sleepCountdown() {
+    if (ambientOn) stopAmbient();
+    if (moving || arranging) stopArrange();
+    clearTimeout(okTimer); okDown = 0; okLong = false;
     var left = 15, tickDown;
     openModal('<h3>Sleep timer</h3><p class="m-text" id="sleepText">The TV turns off in 15 seconds.</p>' +
       '<div class="m-item m-row"><span>Keep watching</span></div>', {cls:'menu',
@@ -1048,7 +1051,7 @@
   function startAmbient() {
     if (ambientOn || document.hidden || modal) return;
     loadPhotos().then(function () {
-      if (!photos.length) return;
+      if (ambientOn || document.hidden || modal || !photos.length) return;
       ambientOn = true;
       closeModal();
       $('ambient-mode').classList.add('show');

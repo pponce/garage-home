@@ -138,12 +138,17 @@ test('sleep needs power permission; cancel and backgrounding prevent countdown s
     await page.evaluate(()=>{window.grants.push('power.off');});
     await activateControl(page,'sleep');
     await page.waitForFunction(()=>window.alarmCalls.length===1);
+    await page.evaluate(()=>localStorage.setItem('gh.photos',JSON.stringify({at:Date.now(),list:[
+      {url:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',title:'Test image'}
+    ]})));
     await page.clock.fastForward(15*60000);
+    await page.waitForSelector('#ambient-mode.show');
     await page.evaluate(()=>{
       window.sleepRequest={appControl:{data:window.alarmCalls[0].data}};
       window.dispatchEvent(new Event('appcontrol'));
     });
     assert.match(await page.locator('#modal').innerText(),/Keep watching/);
+    assert.equal(await page.locator('#ambient-mode.show').count(),0);
     await page.keyboard.press('Enter');
     await page.clock.fastForward(20000);
     assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method==='power.off').length),0);
