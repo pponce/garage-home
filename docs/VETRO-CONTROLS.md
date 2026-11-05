@@ -16,7 +16,7 @@ The browser suite validates the UI and permission handling with simulated Tizen 
 
 ## Sources
 
-1. Open **Sources** from the TV row. Confirm the reported HDMI ports, connection labels and selected-input marker. Opening the menu must leave the current input unchanged.
+1. Open **Sources** from the top bar and TV row, then from the top bar on the Apps page. Confirm each opens the same input list with the reported HDMI ports, connection labels and selected-input marker. Opening the menu must leave the current input unchanged.
 2. Select a connected HDMI port. Confirm the correct source appears full-screen and verify its audio. If the TV viewer cannot open, record the message shown in Garage Home.
 3. Reopen Garage Home and Sources. Confirm the selected-input marker matches the port chosen in step 2.
 4. Check that Back closes the menu without switching. If a device is in standby, its reported port remains selectable even when marked **No device detected**.

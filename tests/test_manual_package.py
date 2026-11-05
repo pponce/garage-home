@@ -29,7 +29,9 @@ class ManualPackageTests(unittest.TestCase):
                 privileges = {item.get('name') for item in config.findall('t:privilege', manual.NS)}
                 self.assertIn('http://tizen.org/privilege/tv.window', privileges)
                 self.assertIn(b'<script src="tv-sources.js"></script>', archive.read('index.html'))
-                self.assertNotIn(b'KEY_SOURCE', archive.read('app.js'))
+                for name in archive.namelist():
+                    if name.endswith(('.js', '.html')):
+                        self.assertNotIn(b'KEY_SOURCE', archive.read(name), name)
 
     def test_new_builds_have_independent_local_reply_keys(self):
         (ROOT / "dist").mkdir(exist_ok=True)

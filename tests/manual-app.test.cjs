@@ -249,6 +249,43 @@ test('Sources lists native inputs and the remote opens the selected input in the
     assert.deepEqual(errors,[]);
   }finally{await page.close();}
 });
+test('the top-bar Sources button on Home and Apps uses native inputs without a Vetro launch',async()=>{
+  for(const appPage of [false,true]){
+    const {page,errors}=await openApp(false);
+    try{
+      await mockControls(page);await mockSources(page);
+      await page.evaluate(()=>{
+        window.inputHttp=[];
+        window.fetch=url=>{window.inputHttp.push(String(url));return Promise.reject(Error('Offline'));};
+      });
+      await page.waitForSelector('#splash.gone');
+      await page.keyboard.press('ArrowUp');
+      if(appPage){
+        await page.keyboard.press('ArrowRight');
+        await page.keyboard.press('Enter');
+        assert.equal(await page.locator('#apps.page.active').count(),1);
+      }
+      for(let i=0;i<8&&!await page.locator('#topbar [data-name="Sources"].focused').count();i++){
+        await page.keyboard.press('ArrowRight');
+      }
+      assert.equal(await page.locator('#topbar .focused').getAttribute('data-name'),'Sources');
+      await page.keyboard.press('Enter');
+      await page.waitForSelector('#sourceList [data-source="HDMI:4"]');
+      assert.equal(await page.locator('#sourceList .focused').getAttribute('data-source'),'HDMI:2');
+      assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read']);
+      assert.deepEqual(await page.evaluate(()=>window.appCalls),[]);
+      assert.deepEqual(await page.evaluate(()=>window.inputHttp.filter(url=>url.includes(':8099'))),[]);
+      await page.keyboard.press('ArrowUp');
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(()=>window.appCalls.includes('org.tizen.tv-viewer'));
+      assert.deepEqual(await page.evaluate(()=>window.appCalls),['org.tizen.tv-viewer']);
+      assert.deepEqual(await page.evaluate(()=>window.inputCalls.map(c=>c.op)),['read','read','switch']);
+      assert.deepEqual(await page.evaluate(()=>window.vetroCalls),[]);
+      assert.deepEqual(await page.evaluate(()=>window.inputHttp.filter(url=>url.includes(':8099'))),[]);
+      assert.deepEqual(errors,[]);
+    }finally{await page.close();}
+  }
+});
 test('Back during the input recheck prevents a delayed source change',async()=>{
   const {page,errors}=await openApp(false);
   try{

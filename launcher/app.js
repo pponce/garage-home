@@ -1193,6 +1193,7 @@
 
   /* ---------- input ---------- */
   document.querySelectorAll('.chip').forEach(function (c) { c.innerHTML = icon(c.dataset.icon); });
+  $('sources')._action = openSources;
   $('weather')._action = weather;
 
   var lastKey = 0, lastInput = 0, okDown = 0, okLong = false, okTimer = null;

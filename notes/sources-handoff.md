@@ -28,3 +28,12 @@ Replace the Sources remote-key shortcut with an input list inside Garage Home. U
 - The installer reuses the saved author certificate and configuration, updates in place and verifies installed file hashes. It does not change Vetro or Developer Mode settings. An ambiguous install result is verified without repeating the installation.
 - Next: run the signed update, then follow the Sources checklist in `docs/VETRO-CONTROLS.md`. Confirm the actual connected/disconnected port list, full-screen HDMI video/audio, Live TV, Back and current-input marker. Physical full-screen behavior is not yet verified.
 - After the update, request and approve Garage Home's Vetro control permissions again. Sources itself needs no Vetro permission. Brightness remains optional and no playback buttons are added.
+
+## Toolbar Sources correction: 1.3.2
+
+- Device feedback confirms the TV-row Sources menu works. The Sources icon to the left of Settings reports a Vetro launch error.
+- Root cause: the top-bar button in `launcher/index.html` retained `data-launch="key:KEY_SOURCE"`. Only the TV-row tile was bound to the native input menu.
+- The top-bar button now has its own action bound to `openSources`, with no app-launch target. Both entry points share the same menu and input-selection code.
+- Regression coverage exercises the top icon from both Home and Apps with Vetro unavailable, checks native listing and selection, and rejects Vetro HTTP/API launches. Package validation now checks all shipped HTML/JavaScript for the obsolete remote-key reference.
+- Syntax checks, all 16 Python tests and the 1.3.2 unsigned build pass locally. Run browser CI, then pin the installer to the tested source revision and deliver a complete install block.
+- Next device check: use the top Sources icon after updating, then verify the selected HDMI input's full-screen video/audio. The feedback confirms menu access; it does not separately confirm full-screen playback.

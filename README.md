@@ -16,7 +16,7 @@ cd garage-home
 python3 tools/build-manual.py
 ```
 
-Output: `dist/GarageHome-manual-1.3.1-unsigned.wgt`, accompanied by `dist/SHA256SUMS`.
+Output: `dist/GarageHome-manual-1.3.2-unsigned.wgt`, accompanied by `dist/SHA256SUMS`.
 
 Sign the **local WGT** with your Samsung author/distributor certificate covering your TV, then install it with a compatible Tizen installer. Apps2Samsung can sign a selected local WGT using an existing certificate. For an update, reuse the installed app's author certificate and install over it to retain its data. The builder does not read certificates or modify per-device configuration files. It generates a new package-local reply-reader key for each build; this is not a Vetro owner credential.
 
@@ -30,7 +30,7 @@ Open Garage Home from **Apps**, or pin its tile to Samsung Home. Choose a tile t
 
 App browsing and ordinary app launches use Samsung’s Tizen APIs. The sleep timer is activated only when you select it; that feature can reopen the app at the requested time to present its shutdown countdown.
 
-Choose **Sources** in the TV row to open Garage Home's input list. It shows the HDMI and Live TV inputs reported by the TV, marks the selected input and distinguishes connected devices from disconnected ports. A device in standby may appear disconnected; its port can still be selected. Opening or refreshing the list does not switch inputs.
+Choose **Sources** in the top bar or TV row to open Garage Home's input list. It shows the HDMI and Live TV inputs reported by the TV, marks the selected input and distinguishes connected devices from disconnected ports. A device in standby may appear disconnected; its port can still be selected. Opening or refreshing the list does not switch inputs.
 
 Selecting a source changes the input through Samsung's public TVWindow API, then requests the Samsung TV viewer for full-screen video. This feature uses the widget's `tv.window` privilege and requires no Vetro app permission or Samsung network-remote pairing. If the TV accepts the input but refuses the viewer launch, Garage Home explains that result so you can open Live TV from Samsung Home. An input change with an uncertain result is not automatically repeated.
 
