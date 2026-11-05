@@ -1,10 +1,13 @@
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+import warnings
+import zipfile
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('garage_installer', Path(__file__).resolve().parents[1] / 'tools/install-vetro-controls.py')
@@ -111,6 +114,65 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(module.author_certificate(signature('YQ==')), module.author_certificate(signature('Yg==')))
         with self.assertRaises(Exception):
             module.author_certificate(b'<Signature/>')
+
+
+class SignedWidgetTests(unittest.TestCase):
+    def setUp(self):
+        self.contents = {name: ('payload: ' + name).encode() for name in module.FILES}
+
+    def widget(self, directories=True, omit=None, extra=None, change=None):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, 'w') as bundle:
+            if directories:
+                bundle.writestr('service/', b'')
+                bundle.writestr('vendor/', b'')
+            payloads = dict(self.contents, **{'author-signature.xml': b'<Signature/>', 'signature1.xml': b'<Signature/>'})
+            if change:
+                payloads.update(change)
+            for name, data in payloads.items():
+                if name != omit:
+                    bundle.writestr(name, data)
+            if extra:
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', UserWarning)
+                    for name, data in extra:
+                        bundle.writestr(name, data)
+        stream.seek(0)
+        return zipfile.ZipFile(stream)
+
+    def test_parent_folder_records_are_accepted_without_changing_files(self):
+        for directories in (False, True):
+            with self.subTest(directories=directories), self.widget(directories=directories) as bundle:
+                module.validate_signed_widget(bundle, self.contents)
+
+    def test_missing_signatures_and_unexpected_files_still_stop_installation(self):
+        for options in ({'omit': 'signature1.xml'}, {'omit': 'author-signature.xml'},
+                        {'omit': 'service/index.js'}, {'extra': [('unexpected.js', b'code')]}):
+            with self.subTest(options=options), self.widget(**options) as bundle:
+                with self.assertRaisesRegex(RuntimeError, 'file mismatch'):
+                    module.validate_signed_widget(bundle, self.contents)
+
+    def test_duplicate_and_unexpected_folder_entries_are_rejected(self):
+        for extra, expected in (([('service/index.js', b'duplicate')], 'duplicate'),
+                                ([('extra/', b'')], 'Unexpected ZIP folder'),
+                                ([('../', b'')], 'Unexpected ZIP folder'),
+                                ([('service/', b'concealed')], 'duplicate')):
+            with self.subTest(extra=extra), self.widget(extra=extra) as bundle:
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    module.validate_signed_widget(bundle, self.contents)
+
+    def test_modified_payloads_are_rejected_with_folder_records_present(self):
+        with self.widget(change={'service/index.js': b'changed'}) as bundle:
+            with self.assertRaisesRegex(RuntimeError, 'changed the app contents'):
+                module.validate_signed_widget(bundle, self.contents)
+
+    def test_symbolic_links_are_rejected(self):
+        entry = zipfile.ZipInfo('linked.js')
+        entry.create_system = 3
+        entry.external_attr = 0o120777 << 16
+        with self.widget(extra=[(entry, b'app.js')]) as bundle:
+            with self.assertRaisesRegex(RuntimeError, 'symbolic link'):
+                module.validate_signed_widget(bundle, self.contents)
 
 
 if __name__ == '__main__':

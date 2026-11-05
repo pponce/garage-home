@@ -14,6 +14,7 @@ import re
 import secrets
 import shlex
 import shutil
+import stat
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -37,6 +38,30 @@ def author_certificate(signature):
     if node is None or not node.text:
         raise RuntimeError('The author signature has no certificate.')
     return hashlib.sha256(base64.b64decode(''.join(node.text.split()), validate=True)).hexdigest()
+
+
+def validate_signed_widget(bundle, contents, old_signature=None):
+    expected = set(FILES) | {'author-signature.xml', 'signature1.xml'}
+    directories = {str(parent) + '/' for name in expected for parent in Path(name).parents if str(parent) != '.'}
+    entries = bundle.infolist()
+    names = [entry.filename for entry in entries]
+    if len(names) != len(set(names)):
+        raise RuntimeError('The signed widget contains duplicate ZIP entries.')
+    for entry in entries:
+        if stat.S_ISLNK(entry.external_attr >> 16):
+            raise RuntimeError('The signed widget contains a symbolic link: ' + repr(entry.filename))
+        if entry.is_dir() and (entry.filename not in directories or entry.file_size != 0):
+            raise RuntimeError('Unexpected ZIP folder in the signed widget: ' + repr(entry.filename))
+    # JSZip emits empty parent-directory records for nested app files. Compare
+    # the actual files separately while still checking every expected payload.
+    actual = {entry.filename for entry in entries if not entry.is_dir()}
+    if actual != expected:
+        raise RuntimeError('Signed widget file mismatch. Missing: ' + repr(sorted(expected - actual)) +
+                           '; unexpected: ' + repr(sorted(actual - expected)))
+    if any(bundle.read(name) != contents[name] for name in FILES):
+        raise RuntimeError('The signing helper changed the app contents.')
+    if old_signature and author_certificate(old_signature) != author_certificate(bundle.read('author-signature.xml')):
+        raise RuntimeError('The saved author certificate does not match the installed Garage Home. No install was requested.')
 
 
 def validate_saved(record):
@@ -232,12 +257,7 @@ class Installer:
         signed = self.base / 'signed' / ('GarageHome-controls-' + self.stamp + '.wgt')
         self.run(['node', str(helper), str(dependencies), str(cert), str(unsigned), str(signed)], sensitive=True)
         with zipfile.ZipFile(signed) as bundle:
-            if len(bundle.namelist()) != len(set(bundle.namelist())) or set(bundle.namelist()) != set(FILES) | {'author-signature.xml', 'signature1.xml'}:
-                raise RuntimeError('Unexpected contents or missing signatures in the signed widget.')
-            if any(bundle.read(name) != contents[name] for name in FILES):
-                raise RuntimeError('The signing helper changed the app contents.')
-            if old_signature and author_certificate(old_signature) != author_certificate(bundle.read('author-signature.xml')):
-                raise RuntimeError('The saved author certificate does not match the installed Garage Home. No install was requested.')
+            validate_signed_widget(bundle, contents, old_signature)
         if signed.stat().st_size > 32 * 1024 * 1024:
             raise RuntimeError('The widget exceeds the Vetro installation size limit.')
         target = '/home/owner/share/tmp/sdk_tools/garage-controls-' + secrets.token_hex(8) + '/app.wgt'
