@@ -162,7 +162,7 @@
     {id: 'org.tizen.browser', name: 'Internet', icon: 'web'},
     {id: 'com.samsung.tv.store', name: 'App store', icon: 'store'},
     {id: 'org.tizen.menu', name: 'Settings', icon: 'settings'},
-    // Samsung's own Home bar, for anything only it offers (Garage Home closes it after a Home press).
+    // Samsung's own Home bar, for anything only it offers.
     {id: 'com.samsung.tv.csfs', name: 'Samsung Home', icon: 'home'}
   ];
 
@@ -185,7 +185,13 @@
       return r.json().then(function (d) { if (!r.ok || d.ok === false) throw new Error(d.error || r.status); return d; });
     });
   }
-  function pressKey(key) { return vetro('/control', {key: key}); }
+  var controls = GarageVetroControls.create({
+    storage: window.localStorage,
+    start: function () { return GarageVetroTransport.start(); },
+    client: function () { return new VetroAppAccess({tizen:window.tizen, httpReplies:true,
+      crypto:window.crypto, pollReply:GarageVetroTransport.readReply}); }
+  });
+  var sleepTimer = GarageSleepTimer.create({storage:window.localStorage, tizen:window.tizen, crypto:window.crypto});
 
   // Plain-language reason a Vetro request failed.
   function vetroProblem(e) {
@@ -586,24 +592,6 @@
     ws.onerror = function () { clearTimeout(timer); finish((name || key) + " didn't work. The TV's remote control service isn't available."); };
   }
 
-  /* ---------- pairing code: Vetro asks the TV to show it when a browser or script signs in ---------- */
-  var pairShown = null;
-  function checkPairing() {
-    if (!hasTizen || document.hidden) return;
-    vetro('/auth/pending').then(function (d) {
-      if (d.code && d.code !== pairShown) {
-        pairShown = d.code;
-        openModal('<h3>Pair with Vetro</h3><p class="m-text">' + esc(d.name) + ' wants to control this TV. Enter this code there:</p>' +
-          '<div class="pair-code">' + esc(d.code.slice(0, 3) + ' ' + d.code.slice(3)) + '</div>' +
-          '<p class="m-text">Didn\'t ask for this? Press Back and the code expires in 2 minutes.</p><div class="m-item m-row"><span>Close</span></div>', {cls: 'pair'});
-        bindItems([closeModal]);
-      } else if (!d.code && pairShown) {
-        pairShown = null;
-        if (modal && modal.el.querySelector('.pair-code')) { closeModal(); toast('Pairing finished'); }
-      }
-    }).catch(function () {});
-  }
-
   /* ---------- modal sheets (PIN pad, app menu, news) ---------- */
   var modal = null;
   function openModal(html, opts) {
@@ -611,14 +599,16 @@
     var el = $('modal');
     el.innerHTML = '<div class="sheet ' + (opts.cls || '') + '">' + html + '</div>';
     el.classList.add('show');
-    modal = {el: el, cols: opts.cols || 1, index: opts.index || 0, onBack: opts.onBack};
+    modal = {el: el, cols: opts.cols || 1, index: opts.index || 0, onBack: opts.onBack, onClose: opts.onClose};
     modalFocus();
   }
   function closeModal() {
     if (!modal) return;
+    var cleanup = modal.onClose;
     modal.el.classList.remove('show');
     modal.el.innerHTML = '';
     modal = null;
+    if (cleanup) cleanup();
   }
   function modalItems() { return Array.prototype.slice.call(modal.el.querySelectorAll('.m-item')); }
   function modalFocus() {
@@ -761,129 +751,189 @@
   }
 
   /* ---------- quick controls ---------- */
-  var backlight = null;
+  function controlError(error) { toast(controls.errorMessage(error)); }
   function changeBrightness(step) {
-    var read = backlight === null
-      ? vetro('/tv-settings').then(function (d) {
-          var item = d.items.filter(function (x) { return x.id === 'backlight'; })[0];
-          if (!item) throw new Error('no brightness');
-          return item.value;
-        })
-      : Promise.resolve(backlight);
-    read.then(function (value) {
-      var next = Math.max(0, Math.min(50, value + step));
-      return vetro('/tv-settings', {id: 'backlight', value: next, expected: value}).then(function (r) {
-        backlight = r.value;
-        toast('Brightness ' + Math.round(backlight * 2) + '%');
-      });
-    }).catch(function (e) { backlight = null; toast("Brightness didn't change. " + vetroProblem(e)); });
+    controls.brightness(step).then(function (value) { toast('TV brightness ' + value); }).catch(controlError);
   }
-  function key(name, label) {
-    return function () { pressKey(name).catch(function (e) { toast(label + " didn't work. " + vetroProblem(e)); }); };
+  function audioControl(name) {
+    return function () { controls.audio(name).catch(controlError); };
+  }
+  function permissionLabel(scope) { return controls.scopes.indexOf(scope) >= 0 ? 'Approved' : 'Not approved'; }
+  function controlsDescription() {
+    if (controls.state === 'pending') return 'Request sent. In Vetro, open App permissions, refresh requests and approve Garage Home. Then refresh access here.';
+    if (controls.state === 'unknown') return 'Connect to Vetro and approve the controls you want to use.';
+    return 'Running apps: ' + permissionLabel('tasks.read') + ' · Close apps: ' + permissionLabel('tasks.stop') +
+      ' · Volume: ' + permissionLabel('remote.audio') + ' · Sleep: ' + permissionLabel('power.off') +
+      (controls.brightnessEnabled() ? ' · Brightness: ' + permissionLabel('picture.brightness') : '');
+  }
+  function openControls() {
+    var enabled = controls.brightnessEnabled(), activeSleep = sleepTimer.state();
+    var actions = [
+      function () { updateAccess(true); },
+      function () { updateAccess(false); },
+      function () {
+        if (controls.brightnessEnabled()) {
+          try { controls.setBrightnessEnabled(false); renderControls(); openControls(); }
+          catch (_) { toast('The brightness preference could not be saved.'); }
+        } else confirmBrightness();
+      }
+    ];
+    var html = '<h3>Vetro controls</h3><p class="m-text" id="accessNote">' + esc(controlsDescription()) + '</p>' +
+      '<div class="m-item m-row"><span>Connect / request access</span></div>' +
+      '<div class="m-item m-row"><span>Refresh access</span></div>' +
+      '<div class="m-item m-row"><span>TV brightness controls: ' + (enabled ? 'On' : 'Off') + '</span></div>' +
+      '<p class="m-text">TV brightness changes picture settings and can affect later viewing. Turning these controls off does not restore a previous brightness value.</p>';
+    if (activeSleep) {
+      html += '<div class="m-item m-row"><span>Cancel sleep timer</span></div>';
+      actions.push(function () {
+        try { sleepTimer.cancel(); renderControls(); openControls(); toast('Sleep timer off'); }
+        catch (_) { toast('The sleep timer could not be cancelled.'); }
+      });
+    }
+    html += '<div class="m-item m-row"><span>Close</span></div>';
+    actions.push(function () { closeModal(); refocus(); });
+    openModal(html, {cls:'menu controls'});
+    bindItems(actions);
+  }
+  function updateAccess(request) {
+    var view = modal;
+    if (!view || !$('accessNote')) return;
+    $('accessNote').textContent = request ? 'Requesting access…' : 'Checking access…';
+    (request ? controls.connect() : controls.refresh()).then(function () {
+      if (modal === view) $('accessNote').textContent = controlsDescription();
+    }).catch(function (error) {
+      if (modal === view) $('accessNote').textContent = controls.errorMessage(error);
+    });
+  }
+  function confirmBrightness() {
+    openModal('<h3>Enable TV brightness controls?</h3>' +
+      '<p class="m-text">Dimmer and Brighter change the TV’s picture brightness. The value can remain changed after you leave Garage Home, including while watching in Filmmaker Mode.</p>' +
+      '<p class="m-text">After enabling, request access and approve brightness in Vetro. This does not change brightness now.</p>' +
+      '<div class="m-item m-row"><span>Enable controls</span></div>' +
+      '<div class="m-item m-row"><span>Cancel</span></div>', {cls:'menu', onBack:openControls});
+    bindItems([function () {
+      try { controls.setBrightnessEnabled(true); renderControls(); openControls(); }
+      catch (_) { toast('The brightness preference could not be saved.'); }
+    }, openControls]);
   }
 
-  // Sleep timer: a Tizen alarm relaunches Garage Home, which then turns the TV off through Vetro.
-  var SLEEP_STEPS = [0, 15, 30, 60, 90];
-  function sleepState() { var s = store('gh.sleep'); return s && s.at > Date.now() ? s : null; }
+  // Only an explicitly scheduled Tizen alarm can start the shutdown countdown.
+  var SLEEP_STEPS = [0,15,30,60,90], sleepBusy = false, sleepModal = null;
   function sleepLabel() {
-    var s = sleepState();
-    return s ? 'Off in ' + Math.max(1, Math.round((s.at - Date.now()) / 60000)) + ' min' : 'Sleep timer';
+    var s = sleepTimer.state();
+    return s ? 'Off in ' + Math.max(1, Math.round((s.at-Date.now())/60000)) + ' min' : 'Sleep timer';
   }
-  function cycleSleep(el) {
-    var s = sleepState(), mins = s ? Math.round((s.at - Date.now()) / 60000) : 0;
-    var next = SLEEP_STEPS.filter(function (m) { return m > mins + 1; })[0] || 0;
-    if (s && hasTizen && s.id) { try { tizen.alarm.remove(s.id); } catch (e) {} }
-    if (!next) { store('gh.sleep', null); toast('Sleep timer off'); }
-    else {
-      var id = null;
-      if (hasTizen) {
-        var ctrl = new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/default', null, null, null,
-          [new tizen.ApplicationControlData('action', ['sleep'])]);
-        var alarm = new tizen.AlarmRelative(next * 60);
-        tizen.alarm.add(alarm, tizen.application.getCurrentApplication().appInfo.id, ctrl);
-        id = alarm.id;
-      }
-      store('gh.sleep', {id: id, at: Date.now() + next * 60000});
-      toast('The TV turns off in ' + next + ' minutes');
+  function cycleSleep() {
+    if (sleepBusy) return;
+    var s = sleepTimer.state(), mins = s ? Math.round((s.at-Date.now())/60000) : 0;
+    var next = SLEEP_STEPS.filter(function (m) { return m > mins+1; })[0] || 0;
+    if (!next) {
+      try { sleepTimer.cancel(); renderControls(); refocus(); toast('Sleep timer off'); }
+      catch (_) { toast('The sleep timer could not be cancelled.'); }
+      return;
     }
-    el.querySelector('.name').textContent = sleepLabel();
+    sleepBusy = true;
+    controls.refresh().then(function (status) {
+      if (status.scopes.indexOf('power.off') < 0) throw {code:'permission_denied', submitted:false};
+      if (document.hidden) return;
+      sleepTimer.schedule(next);
+      renderControls(); refocus();
+      toast('Sleep timer set for ' + next + ' minutes');
+    }).catch(function (error) {
+      if (error.code) controlError(error);
+      else toast('The sleep timer could not be scheduled. No new timer is active.');
+    }).then(function () { sleepBusy = false; });
   }
   function checkSleepRequest() {
-    if (!hasTizen) return;
+    if (!hasTizen || document.hidden) return;
     try {
       var req = tizen.application.getCurrentApplication().getRequestedAppControl();
-      var data = req && req.appControl.data || [];
-      var asked = data.some(function (d) { return d.key === 'action' && d.value[0] === 'sleep'; });
-      var s = store('gh.sleep');
-      if (asked && s && Math.abs(s.at - Date.now()) < 5 * 60000) { store('gh.sleep', null); sleepCountdown(); }
-    } catch (e) {}
+      if (sleepTimer.consume(req && req.appControl.data || [])) sleepCountdown();
+    } catch (_) { toast('The sleep alarm could not be verified. The TV will stay on.'); }
   }
   function sleepCountdown() {
-    var left = 15;
-    openModal('<h3>Sleep timer</h3><p class="m-text" id="sleepText"></p><div class="m-item m-row"><span>Keep watching</span></div>',
-      {cls: 'menu'});
-    var tickDown = setInterval(function () {
-      if (!modal) return clearInterval(tickDown);
-      $('sleepText').textContent = 'The TV turns off in ' + left + ' seconds.';
-      if (left-- <= 0) { clearInterval(tickDown); closeModal(); pressKey('XF86PowerOff'); }
-    }, 1000);
-    $('sleepText').textContent = 'The TV turns off in 15 seconds.';
-    bindItems([function () { clearInterval(tickDown); closeModal(); toast('Sleep timer cancelled'); }]);
-    modal.onBack = function () { clearInterval(tickDown); };
+    var left = 15, tickDown;
+    openModal('<h3>Sleep timer</h3><p class="m-text" id="sleepText">The TV turns off in 15 seconds.</p>' +
+      '<div class="m-item m-row"><span>Keep watching</span></div>', {cls:'menu',
+        onClose:function () { clearInterval(tickDown); sleepModal = null; }});
+    var view = modal;
+    sleepModal = view;
+    bindItems([function () { closeModal(); toast('Sleep timer cancelled'); }]);
+    tickDown = setInterval(function () {
+      if (modal !== view || document.hidden) { clearInterval(tickDown); return; }
+      left--;
+      if (left <= 0) {
+        clearInterval(tickDown);
+        $('sleepText').textContent = 'Turning the TV off…';
+        controls.powerOff(function () { return modal === view && !document.hidden; }).then(function () {
+          if (modal === view) closeModal();
+        }).catch(function (error) {
+          if (modal === view) closeModal();
+          if (error.code !== 'cancelled') controlError(error);
+        });
+      } else $('sleepText').textContent = 'The TV turns off in ' + left + ' seconds.';
+    },1000);
   }
 
   function renderControls() {
     var row = $('ctrlRow');
     row.innerHTML = '';
-    [
-      actionTile('mute', 'Mute', key('XF86AudioMute', 'Mute')),
-      actionTile('voldown', 'Volume down', key('XF86AudioLowerVolume', 'Volume')),
-      actionTile('volup', 'Volume up', key('XF86AudioRaiseVolume', 'Volume')),
-      actionTile('dim', 'Dimmer', function () { changeBrightness(-5); }),
-      actionTile('bright', 'Brighter', function () { changeBrightness(5); }),
-      actionTile('sleep', sleepLabel(), cycleSleep),
-      actionTile('tasks', 'Running apps', openTasks),
-      actionTile('move', 'Arrange apps', startArrange)
-    ].forEach(function (t) { row.appendChild(t); });
+    var tiles = [
+      ['mute','Mute',audioControl('XF86AudioMute')],
+      ['voldown','Volume down',audioControl('XF86AudioLowerVolume')],
+      ['volup','Volume up',audioControl('XF86AudioRaiseVolume')],
+      ['sleep',sleepLabel(),cycleSleep],
+      ['tasks','Running apps',openTasks],
+      ['settings','Vetro controls',openControls],
+      ['move','Arrange apps',startArrange]
+    ];
+    if (controls.brightnessEnabled()) tiles.splice(3,0,
+      ['dim','Dimmer',function () { changeBrightness(-5); }],
+      ['bright','Brighter',function () { changeBrightness(5); }]);
+    tiles.forEach(function (item) {
+      var tile = actionTile(item[0],item[1],item[2]);
+      tile.dataset.control = item[0];
+      row.appendChild(tile);
+    });
   }
 
-  /* ---------- task manager: running apps through Vetro ---------- */
-  // Only apps you could open yourself are listed; system services stay hidden, and Vetro refuses protected parts.
+  /* ---------- task manager: verified user apps through scoped Vetro access ---------- */
   function openTasks() {
-    openModal('<h3>Running apps</h3><p class="m-text" id="taskNote">Checking what is running…</p><div class="m-scroll" id="taskList"></div>', {cls: 'news tasks'});
-    vetro('/monitor?scope=full').then(function (d) {
-      if (!modal || !$('taskList')) return;
-      var known = {}, mem = {};
-      allApps.forEach(function (a) { known[a.id] = a; });
-      ((d.data && d.data.processes) || d.processes || []).forEach(function (p) {
-        if (p.appId) mem[p.appId] = (mem[p.appId] || 0) + (p.rssBytes || 0);
-      });
-      var ids = Object.keys(mem), shown = ids.filter(function (id) {
-        var a = known[id];
-        return a && a.show && id.indexOf(SELF) !== 0 && !/^vetrotvapp/.test(id);
-      }).sort(function (a, b) { return mem[b] - mem[a]; });
-      var hidden = ids.length - shown.length;
-      $('taskNote').textContent = shown.length
-        ? 'Choose an app to close it. ' + hidden + ' system services are hidden.'
-        : 'No apps are running besides Garage Home. ' + hidden + ' system services are hidden.';
-      $('taskList').innerHTML = shown.map(function (id) {
-        return '<div class="m-item m-news"><b>' + esc(cleanName(known[id].name)) + '</b><span>' + Math.round(mem[id] / 1048576) + ' MB memory</span></div>';
+    openModal('<h3>Running apps</h3><p class="m-text" id="taskNote">Checking running user apps…</p>' +
+      '<div class="m-scroll" id="taskList"></div>' +
+      '<div class="m-item m-row"><span>Refresh</span></div>' +
+      '<div class="m-item m-row"><span>Close</span></div>', {cls:'news tasks'});
+    bindItems([openTasks,closeModal]);
+    var view = modal;
+    controls.tasks().then(function (apps) {
+      if (modal !== view) return;
+      apps.sort(function (a,b) { return (b.memoryBytes || 0)-(a.memoryBytes || 0); });
+      $('taskNote').textContent = apps.length ? 'Select a user app to close. System and preloaded apps are excluded.' :
+        'No eligible user apps are running besides Garage Home. System and preloaded apps are excluded.';
+      $('taskList').innerHTML = apps.map(function (app) {
+        var local = allApps.filter(function (item) { return item.id === app.appId; })[0];
+        var name = local && local.name || app.name || app.appId;
+        return '<div class="m-item m-news"><b>' + esc(cleanName(name)) + '</b><span>' +
+          (app.memoryBytes === null ? 'Memory unavailable' : Math.round(app.memoryBytes/1048576) + ' MB memory') + '</span></div>';
       }).join('');
+      bindItems(apps.map(function (app) {
+        var local = allApps.filter(function (item) { return item.id === app.appId; })[0];
+        return function () { confirmClose(app.appId,cleanName(local && local.name || app.name || app.appId)); };
+      }).concat([openTasks,closeModal]));
       modal.index = 0;
-      bindItems(shown.map(function (id) { return function () { confirmClose(id, cleanName(known[id].name)); }; }));
       modalFocus();
-    }).catch(function (e) { if ($('taskNote')) $('taskNote').textContent = "Can't read running apps. " + vetroProblem(e); });
+    }).catch(function (error) {
+      if (modal === view) $('taskNote').textContent = controls.errorMessage(error);
+    });
   }
-  function confirmClose(id, name) {
+  function confirmClose(id,name) {
     openModal('<h3>Close ' + esc(name) + '?</h3><p class="m-text">Unsaved progress in the app may be lost.</p>' +
-      '<div class="m-item m-row"><span>Close app</span></div><div class="m-item m-row"><span>Cancel</span></div>', {cls: 'menu', onBack: openTasks});
+      '<div class="m-item m-row"><span>Close app</span></div><div class="m-item m-row"><span>Cancel</span></div>',
+      {cls:'menu',onBack:openTasks});
     bindItems([function () {
       closeModal();
-      vetro('/components/action', {action: 'stop', appId: id}).then(function () {
-        toast(name + ' closed');
-        setTimeout(openTasks, 600);
-      }).catch(function (e) { toast(name + " didn't close. " + (/protected/i.test(e.message) ? 'It is a protected system app.' : vetroProblem(e))); });
-    }, openTasks]);
+      controls.stop(id).then(function () { toast(name + ' closed'); },controlError);
+    },openTasks]);
   }
 
   /* ---------- Today row: news, holiday, exchange rate, phone remote ---------- */
@@ -1058,7 +1108,7 @@
     $('time').textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
     $('date').textContent = d.toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
     if (ambientOn) { $('amTime').textContent = $('time').textContent; $('amDate').textContent = $('date').textContent; }
-    var sleepTile = document.querySelector('#ctrlRow .tile:nth-child(6) .name');
+    var sleepTile = document.querySelector('#ctrlRow [data-control="sleep"] .name');
     if (sleepTile) sleepTile.textContent = sleepLabel();
   }
 
@@ -1183,8 +1233,9 @@
     okDown = 0;
   });
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) { tick(); getApps(render); checkSleepRequest(); resetIdle(); checkPairing(); }
+    if (!document.hidden) { tick(); getApps(render); checkSleepRequest(); resetIdle(); }
     else {
+      if (sleepModal && modal === sleepModal) closeModal();
       // In the background (another app in front): free what is quick to rebuild when we come back.
       if (ambientOn) stopAmbient();
       $('heroArtBox').innerHTML = '';
@@ -1206,6 +1257,5 @@
   startHeroTimer();
   checkSleepRequest();
   resetIdle();
-  setInterval(checkPairing, 3000);
   setTimeout(function () { $('splash').classList.add('gone'); }, 1800);
 })();

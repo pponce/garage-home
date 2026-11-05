@@ -5,9 +5,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const {spawnSync} = require('child_process');
 const signingRequire = require('module').createRequire(path.join(__dirname, '..', 'tools', 'signing', 'package.json'));
 
-const FILES = ['config.xml', 'index.html', 'style.css', 'app.js', 'qrcode.js', 'app-icon.png', 'logo.png', 'garage-config.js'];
 const CERTS = process.env.CERT_DIR || path.join(os.homedir(), 'SamsungCertificate', 'garage');
 const OUT = path.join(__dirname, 'dist', 'GarageHome.wgt');
 
@@ -20,7 +20,19 @@ async function main() {
     const p12 = (name, pw) => forge.pkcs12.pkcs12FromAsn1(
         forge.asn1.fromDer(fs.readFileSync(path.join(CERTS, name)).toString('binary')), false, pw);
 
-    const contents = FILES.map(name => ({uri: encodeURIComponent(name), data: fs.readFileSync(path.join(__dirname, name))}));
+    // Use the same manifest checks, file list and generated local key as the portable builder.
+    const built = spawnSync(process.env.PYTHON || 'python3',
+        [path.join(__dirname, '..', 'tools', 'build-manual.py'), '--output', path.dirname(OUT)], {encoding:'utf8'});
+    if (built.status !== 0) throw new Error('Unsigned widget build failed: ' + (built.stderr || 'Python 3 is required'));
+    const unsigned = await JSZip.loadAsync(fs.readFileSync(built.stdout.trim().split('\n').pop()));
+    const contents = [];
+    for (const name of Object.keys(unsigned.files).sort()) {
+        if (unsigned.files[name].dir) continue;
+        const config = path.join(__dirname, 'garage-config.js');
+        const data = name === 'garage-config.js' && fs.existsSync(config)
+            ? fs.readFileSync(config) : await unsigned.files[name].async('nodebuffer');
+        contents.push({uri:encodeURIComponent(name), data});
+    }
     const authored = await new Signature('AuthorSignature', contents).sign(p12('author.p12', AUTHOR_PW));
     const signed = await new Signature('DistributorSignature', authored).sign(p12('distributor.p12', DIST_PW));
 

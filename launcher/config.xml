@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://thegaragedevs.com/home" version="1.2.0" viewmodes="maximized">
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets" id="https://thegaragedevs.com/home" version="1.3.0" viewmodes="maximized">
     <tizen:application id="GarageHome.launcher" package="GarageHome" required_version="3.0"/>
     <author href="https://thegaragedevs.com">The Garage Devs</author>
     <content src="index.html"/>
     <feature name="http://tizen.org/feature/screen.size.all"/>
+    <feature name="http://tizen.org/feature/web.service"/>
     <icon src="app-icon.png"/>
     <name>Garage Home</name>
 
     <access origin="https://api.open-meteo.com" subdomains="false"/>
     <access origin="https://ipwho.is" subdomains="false"/>
     <access origin="http://127.0.0.1:8099" subdomains="false"/>
+    <access origin="http://127.0.0.1:8092" subdomains="false"/>
     <access origin="ws://127.0.0.1:8001" subdomains="false"/>
     <access origin="https://date.nager.at" subdomains="false"/>
     <access origin="https://open.er-api.com" subdomains="false"/>
@@ -28,5 +30,10 @@
     <tizen:privilege name="http://tizen.org/privilege/alarm"/>
 
     <tizen:profile name="tv-samsung"/>
+    <tizen:service id="GarageHome.Controls">
+        <tizen:content src="service/index.js"/>
+        <tizen:name>Garage Home controls</tizen:name>
+        <tizen:description>Local reader for authenticated Vetro replies</tizen:description>
+    </tizen:service>
     <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable" encryption="disable" install-location="auto" hwkey-event="enable"/>
 </widget>

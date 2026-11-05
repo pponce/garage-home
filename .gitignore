@@ -3,6 +3,7 @@ dist/
 *.wgt
 garage.env
 garage-config.js
+local-key.js
 *.p12
 debloat-restore-*.json
 .DS_Store

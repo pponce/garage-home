@@ -15,4 +15,7 @@ This branch builds Garage Home as a manually opened Samsung Tizen app. Read READ
 - Do not add backups without the user’s approval.
 - Keep internal project notes in `notes/`. Public documentation describes purpose, setup, and use.
 
+- The on-demand GarageHome.Controls service reads authenticated Vetro replies through loopback. It has no boot or restart registration and cannot execute TV operations.
+- Controls use the scoped Vetro API. Do not add owner credentials or HTTP fallbacks for those operations. Keep TV brightness off by default and request its permission only when enabled.
+
 License: PolyForm Noncommercial 1.0.0; bundled components retain their own licenses.

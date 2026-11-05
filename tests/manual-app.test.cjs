@@ -20,7 +20,164 @@ before(async () => {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   address = 'http://127.0.0.1:' + server.address().port;
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.GARAGE_CHROMIUM || undefined });
+});
+
+async function mockControls(page) {
+  await page.evaluate(() => {
+    window.vetroCalls = [];
+    window.grants = ['tasks.read','tasks.stop','remote.audio','power.off'];
+    window.stopResult = 'verified';
+    window.muted = false;
+    window.alarmCalls = [];
+    window.removedAlarms = [];
+    window.sleepRequest = null;
+    window.GarageVetroTransport = {start:()=>Promise.resolve(),readReply:()=>Promise.reject()};
+    window.VetroAppAccess = function () {
+      this.call = async (method,params) => {
+        window.vetroCalls.push({method,params});
+        if(method === 'access.request') return {state:'pending',scopes:[]};
+        if(method === 'access.status') return {state:'approved',scopes:window.grants};
+        const needed = {'audio.key':'remote.audio','tasks.list':'tasks.read','tasks.stop':'tasks.stop',
+          'power.off':'power.off','brightness.read':'picture.brightness','brightness.set':'picture.brightness'};
+        if(!window.grants.includes(needed[method])) throw Object.assign(new Error('denied'),{code:'permission_denied',submitted:false});
+        if(method === 'tasks.list') return {apps:[{appId:'SampleApp1.Sample',name:'Sample App',
+          running:true,memoryBytes:10485760}],nextOffset:null};
+        if(method === 'tasks.stop') return {appId:params.appId,verified:window.stopResult==='verified',ok:window.stopResult==='verified'};
+        if(method === 'brightness.read') return {value:20,min:0,max:50};
+        if(method === 'brightness.set') return {ok:true,verified:true,value:params.value};
+        return {ok:true,submitted:true};
+      };
+    };
+    window.tizen.AlarmRelative = function(seconds){this.seconds=seconds;};
+    window.tizen.ApplicationControl = function(op,a,b,c,data){this.data=data;};
+    window.tizen.ApplicationControlData = function(key,value){this.key=key;this.value=value;};
+    window.tizen.alarm = {
+      add(alarm,app,ctrl){alarm.id='alarm'+(window.alarmCalls.length+1);window.alarmCalls.push({id:alarm.id,app,data:ctrl.data});},
+      remove(id){window.removedAlarms.push(id);}
+    };
+    const original = window.tizen.application.getCurrentApplication;
+    window.tizen.application.getCurrentApplication = () => ({
+      ...original(), getRequestedAppControl:()=>window.sleepRequest
+    });
+  });
+}
+async function activateControl(page, name) {
+  await page.waitForSelector('#splash.gone');
+  for(let i=0;i<7 && !await page.locator('#ctrlRow .focused').count();i++) await page.keyboard.press('ArrowDown');
+  const index = await page.locator('#ctrlRow [data-control]').evaluateAll((items,name)=>items.findIndex(x=>x.dataset.control===name),name);
+  assert.ok(index>=0,'control '+name+' is present');
+  for(let i=0;i<12;i++) await page.keyboard.press('ArrowLeft');
+  for(let i=0;i<index;i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+}
+test('remote control settings request only base permissions and brightness requires an explicit opt-in',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);
+    assert.equal(await page.locator('[data-control="dim"]').count(),0);
+    assert.equal(await page.locator('[data-control="bright"]').count(),0);
+    await activateControl(page,'settings');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>window.vetroCalls.some(c=>c.method==='access.request'));
+    assert.deepEqual(await page.evaluate(()=>window.vetroCalls[0].params.scopes),['tasks.read','tasks.stop','remote.audio','power.off']);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    assert.match(await page.locator('#modal').innerText(),/Filmmaker Mode/);
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('[data-control="dim"]').count(),1);
+    assert.equal(await page.evaluate(()=>localStorage.getItem('gh.tvBrightness')),'true');
+    assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method.startsWith('brightness.')).length),0);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>window.vetroCalls.filter(c=>c.method==='access.request').length===2);
+    assert.ok(await page.evaluate(()=>window.vetroCalls[1].params.scopes.includes('picture.brightness')));
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('[data-control="dim"]').count(),0);
+    fs.mkdirSync(path.join(root,'../test-results'),{recursive:true});
+    await page.screenshot({path:path.join(root,'../test-results/vetro-controls.png')});
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('mute uses scoped audio and running apps require confirmed close before a success message',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);
+    await activateControl(page,'mute');
+    await page.waitForFunction(()=>window.vetroCalls.some(c=>c.method==='audio.key'));
+    assert.equal(await page.evaluate(()=>window.vetroCalls[0].params.key),'XF86AudioMute');
+    await activateControl(page,'tasks');
+    await page.waitForSelector('#taskList .m-item');
+    assert.match(await page.locator('#taskList').innerText(),/Sample App.*10 MB/s);
+    await page.keyboard.press('Enter');
+    await page.evaluate(()=>{window.stopResult='unconfirmed';});
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('may still'));
+    assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method==='tasks.stop').length),1);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('sleep needs power permission; cancel and backgrounding prevent countdown shutdown',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);
+    await page.clock.install();
+    await page.clock.fastForward(2000);
+    await page.evaluate(()=>{window.grants=['tasks.read'];});
+    await activateControl(page,'sleep');
+    await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('approve'));
+    assert.equal(await page.evaluate(()=>window.alarmCalls.length),0);
+    await page.evaluate(()=>{window.grants.push('power.off');});
+    await activateControl(page,'sleep');
+    await page.waitForFunction(()=>window.alarmCalls.length===1);
+    await page.clock.fastForward(15*60000);
+    await page.evaluate(()=>{
+      window.sleepRequest={appControl:{data:window.alarmCalls[0].data}};
+      window.dispatchEvent(new Event('appcontrol'));
+    });
+    assert.match(await page.locator('#modal').innerText(),/Keep watching/);
+    await page.keyboard.press('Enter');
+    await page.clock.fastForward(20000);
+    assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method==='power.off').length),0);
+    await activateControl(page,'sleep');
+    await page.waitForFunction(()=>window.alarmCalls.length===2);
+    await page.clock.fastForward(15*60000);
+    await page.evaluate(()=>{
+      window.sleepRequest={appControl:{data:window.alarmCalls[1].data}};
+      window.dispatchEvent(new Event('appcontrol'));
+      window.appHidden=true;
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.clock.fastForward(20000);
+    assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method==='power.off').length),0);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
+});
+test('a due sleep alarm sends standby once and cannot replay after another foreground event',async()=>{
+  const {page,errors}=await openApp(false);
+  try{
+    await mockControls(page);
+    await page.clock.install();
+    await page.clock.fastForward(2000);
+    await activateControl(page,'sleep');
+    await page.waitForFunction(()=>window.alarmCalls.length===1);
+    await page.clock.fastForward(15*60000);
+    await page.evaluate(()=>{
+      window.sleepRequest={appControl:{data:window.alarmCalls[0].data}};
+      window.dispatchEvent(new Event('appcontrol'));
+    });
+    await page.clock.runFor(15000);
+    await page.waitForFunction(()=>window.vetroCalls.some(c=>c.method==='power.off'));
+    await page.evaluate(()=>{
+      window.dispatchEvent(new Event('appcontrol'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.clock.runFor(20000);
+    assert.equal(await page.evaluate(()=>window.vetroCalls.filter(c=>c.method==='power.off').length),1);
+    assert.deepEqual(errors,[]);
+  }finally{await page.close();}
 });
 after(async () => {
   if (browser) await browser.close();
