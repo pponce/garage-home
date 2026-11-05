@@ -35,5 +35,6 @@ Replace the Sources remote-key shortcut with an input list inside Garage Home. U
 - Root cause: the top-bar button in `launcher/index.html` retained `data-launch="key:KEY_SOURCE"`. Only the TV-row tile was bound to the native input menu.
 - The top-bar button now has its own action bound to `openSources`, with no app-launch target. Both entry points share the same menu and input-selection code.
 - Regression coverage exercises the top icon from both Home and Apps with Vetro unavailable, checks native listing and selection, and rejects Vetro HTTP/API launches. Package validation now checks all shipped HTML/JavaScript for the obsolete remote-key reference.
-- Syntax checks, all 16 Python tests and the 1.3.2 unsigned build pass locally. Run browser CI, then pin the installer to the tested source revision and deliver a complete install block.
+- Tested source revision: `0698c506e8870dee446a2dacf1ba7e852f9c4d2c`. All 61 tests and the 1.3.2 unsigned build passed in [CI run 42132261463](https://github.com/pponce/garage-home/actions/runs/42132261463).
+- The installer now pins that tested source revision. Its 16 Python checks pass locally, including complete payload coverage and safe installation retries. Deliver a complete install block for this revision.
 - Next device check: use the top Sources icon after updating, then verify the selected HDMI input's full-screen video/audio. The feedback confirms menu access; it does not separately confirm full-screen playback.

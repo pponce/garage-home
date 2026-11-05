@@ -20,7 +20,7 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 
-REVISION = 'e69b9deba26dda10bd25e8e2fe2ceececb0589ab'
+REVISION = '0698c506e8870dee446a2dacf1ba7e852f9c4d2c'
 APP = 'GarageHome.launcher'
 ROOTS = ('/opt/usr/apps/GarageHome/res/wgt', '/usr/apps/GarageHome/res/wgt')
 FILES = (
@@ -185,7 +185,8 @@ class Installer:
         self.script('/usr/bin/app_launcher -k GarageHome.launcher >/dev/null 2>&1\n'
                     '/usr/bin/app_launcher -k GarageHome.Controls >/dev/null 2>&1\n'
                     '/usr/bin/app_launcher -s GarageHome.launcher')
-        self.say('In Garage Home: open Sources and choose a connected HDMI input to check full-screen video and audio.')
+        self.say('In Garage Home: use the top Sources icon or the TV-row Sources tile, then choose a connected HDMI input.')
+        self.say('Check that the selected input opens full-screen with audio.')
         self.say('Sources does not require Vetro app permissions.')
         self.say('After an app update, renew the Vetro controls approval: Vetro controls > Connect / request access.')
         self.say('Approve Garage Home in Vetro App permissions, then choose Refresh access in Garage Home.')
