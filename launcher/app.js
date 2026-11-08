@@ -10,7 +10,7 @@
   var ORDER = [/digitalb/i, /netflix/i, /disney/i, /prime/i, /youtube/i, /klani/i, /spotify/i, /skyshowtime/i];
 
   var hasTizen = typeof tizen !== 'undefined';
-  // Vetro's local service. Controls use scoped access; system-app launch fallback uses HTTP.
+  // Vetro's local service. Controls use the local service adapter.
   // Optional overrides (e.g. from the desktop preview): window.GARAGE_CONFIG = {tvIp: '…'}.
   var CONFIG = window.GARAGE_CONFIG || {};
   var TV_LAN_IP = CONFIG.tvIp || '';   // only a fallback: the TV normally reports its own address
@@ -188,8 +188,7 @@
   var controls = GarageVetroControls.create({
     storage: window.localStorage,
     start: function () { return GarageVetroTransport.start(); },
-    client: function () { return new VetroAppAccess({tizen:window.tizen, httpReplies:true,
-      crypto:window.crypto, pollReply:GarageVetroTransport.readReply}); }
+    client: function () { return GarageVetroTransport; }
   });
   var sleepTimer = GarageSleepTimer.create({storage:window.localStorage, tizen:window.tizen, crypto:window.crypto});
   var sources = GarageSources.create({tizen:window.tizen}), sourceModal = null;
@@ -781,10 +780,10 @@
   function audioControl(name) {
     return function () { controls.audio(name).catch(controlError); };
   }
-  function permissionLabel(scope) { return controls.scopes.indexOf(scope) >= 0 ? 'Approved' : 'Not approved'; }
+  function permissionLabel(scope) { return controls.scopes.indexOf(scope) >= 0 ? 'Available' : 'Unavailable'; }
   function controlsDescription() {
-    if (controls.state === 'pending') return 'Request sent. In Vetro, open App permissions, refresh requests and approve Garage Home. Then refresh access here.';
-    if (controls.state === 'unknown') return 'Connect to Vetro and approve the controls you want to use.';
+    if (controls.state === 'pending') return 'Open Vetro and connect root, then refresh the connection here.';
+    if (controls.state === 'unknown') return 'Connect to Vetro on this TV to use these controls.';
     return 'Running apps: ' + permissionLabel('tasks.read') + ' · Close apps: ' + permissionLabel('tasks.stop') +
       ' · Volume: ' + permissionLabel('remote.audio') + ' · Sleep: ' + permissionLabel('power.off') +
       (controls.brightnessEnabled() ? ' · Brightness: ' + permissionLabel('picture.brightness') : '');
@@ -802,8 +801,8 @@
       }
     ];
     var html = '<h3>Vetro controls</h3><p class="m-text" id="accessNote">' + esc(controlsDescription()) + '</p>' +
-      '<div class="m-item m-row"><span>Connect / request access</span></div>' +
-      '<div class="m-item m-row"><span>Refresh access</span></div>' +
+      '<div class="m-item m-row"><span>Connect to Vetro</span></div>' +
+      '<div class="m-item m-row"><span>Refresh connection</span></div>' +
       '<div class="m-item m-row"><span>TV brightness controls: ' + (enabled ? 'On' : 'Off') + '</span></div>' +
       '<p class="m-text">TV brightness changes picture settings and can affect later viewing. Turning these controls off does not restore a previous brightness value.</p>';
     if (activeSleep) {
@@ -821,7 +820,7 @@
   function updateAccess(request) {
     var view = modal;
     if (!view || !$('accessNote')) return;
-    $('accessNote').textContent = request ? 'Requesting access…' : 'Checking access…';
+    $('accessNote').textContent = request ? 'Connecting to Vetro…' : 'Checking connection…';
     (request ? controls.connect() : controls.refresh()).then(function () {
       if (modal === view) $('accessNote').textContent = controlsDescription();
     }).catch(function (error) {
@@ -831,7 +830,7 @@
   function confirmBrightness() {
     openModal('<h3>Enable TV brightness controls?</h3>' +
       '<p class="m-text">Dimmer and Brighter change the TV’s picture brightness. The value can remain changed after you leave Garage Home, including while watching in Filmmaker Mode.</p>' +
-      '<p class="m-text">After enabling, request access and approve brightness in Vetro. This does not change brightness now.</p>' +
+      '<p class="m-text">After enabling, connect to Vetro. Brightness is available only when the TV confirms support. This does not change brightness now.</p>' +
       '<div class="m-item m-row"><span>Enable controls</span></div>' +
       '<div class="m-item m-row"><span>Cancel</span></div>', {cls:'menu brightness', onBack:openControls});
     bindItems([function () {
@@ -923,7 +922,7 @@
     });
   }
 
-  /* ---------- task manager: verified user apps through scoped Vetro access ---------- */
+  /* ---------- task manager: verified user apps through the local Vetro adapter ---------- */
   function openTasks() {
     openModal('<h3>Running apps</h3><p class="m-text" id="taskNote">Checking running user apps…</p>' +
       '<div class="m-scroll" id="taskList"></div>' +

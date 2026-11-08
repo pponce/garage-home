@@ -1,9 +1,9 @@
-/* Start this package's reply reader on demand. Never start Vetro or send operations over HTTP. */
+/* Start this package service and send its fixed stock Vetro controls. */
 (function (root) {
     'use strict';
     var starting = null, started = false, base = 'http://127.0.0.1:8092';
     function unavailable() {
-        var error = Error('Open Vetro and check App permissions, then try again.');
+        var error = Error('Open Vetro and connect root, then try again.');
         error.code = 'unavailable'; error.submitted = false; return error;
     }
     function read(path) {
@@ -60,7 +60,14 @@
         });
         return starting;
     }
-    root.GarageVetroTransport = {start:start, readReply:function (id) {
+    function call(method, params) { return new Promise(function(resolve,reject){
+        var xhr=new XMLHttpRequest();xhr.open('POST',base+'/stock',true);xhr.timeout=75000;
+        xhr.setRequestHeader('X-Garage-Key',root.GARAGE_LOCAL_KEY);xhr.setRequestHeader('Content-Type','application/json');
+        function failed(){var e=unavailable();e.submitted=null;reject(e);}
+        xhr.onerror=xhr.ontimeout=failed;xhr.onload=function(){try{var d=JSON.parse(xhr.responseText);if(xhr.status!==200){var e=unavailable();e.submitted=d.submitted===false?false:null;reject(e);}else resolve(d);}catch(_){failed();}};
+        xhr.send(JSON.stringify({method:method,params:params}));
+    }); }
+    root.GarageVetroTransport = {start:start,call:call, readReply:function (id) {
         if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) return Promise.reject(unavailable());
         return read('/replies/' + id);
     }};

@@ -36,23 +36,21 @@ Selecting a source changes the input through Samsung's public TVWindow API, then
 
 ## Optional Vetro features
 
-The quick controls use Vetro's app-permission API. A running version with native app access and authenticated HTTP replies is required. Open **Vetro controls → Connect / request access**, approve Garage Home in Vetro's **App permissions**, then choose **Refresh access** in Garage Home. Each permission can be approved separately.
+The quick controls use stock Vetro 0.5.0 through Garage Home's local service. Open Vetro and connect root, then choose **Vetro controls → Connect to Vetro**. No separate per-app approval or Vetro owner token is required.
 
-| Control | Permission | Behavior |
-| --- | --- | --- |
-| Running apps | `tasks.read` | Shows eligible running user apps and their memory usage. System and preloaded apps are excluded by Vetro. |
-| Close app | `tasks.stop` | Asks before closing one eligible app and reports success only after Vetro verifies the result. |
-| Mute, Volume down, Volume up | `remote.audio` | Sends the selected TV audio key once. |
-| Sleep timer | `power.off` | Schedules 15, 30, 60 or 90 minutes, then displays a 15-second **Keep watching** countdown before requesting standby. |
-| Dimmer, Brighter | `picture.brightness` | Adjusts the TV's picture brightness within its reported range; available only after explicit opt-in and approval. |
+| Control | Behavior |
+| --- | --- |
+| Running apps | Shows enabled, visible, removable user apps and their reported memory use. |
+| Close app | Asks before closing an eligible app; success requires Vetro's verified result. |
+| Mute and volume | Sends the selected TV audio key once. |
+| Sleep timer | Schedules 15, 30, 60 or 90 minutes, then presents a 15-second Keep watching countdown before requesting standby. |
+| Dimmer and Brighter | Available after explicit opt-in; reads confirmed panel-brightness support and uses expected-value writes with verification. |
 
-**TV brightness controls are off by default.** They are absent from the initial permission request and the quick-control row. Enabling them in **Vetro controls** adds the buttons but does not change the picture. Using Dimmer or Brighter changes an actual TV picture setting and can affect subsequent viewing, including Filmmaker Mode. Turning the controls off hides them; it does not restore a previous brightness value.
+**TV brightness controls are off by default.** Enabling them only adds the buttons. Using them changes a TV picture setting and can affect later viewing, including Filmmaker Mode. Turning the controls off does not restore an earlier value.
 
-Select the sleep tile repeatedly to choose a duration or turn the timer off. **Vetro controls → Cancel sleep timer** also cancels an active timer directly. The alarm can reopen Garage Home for its countdown. **Keep watching**, Back, or leaving Garage Home during the countdown cancels that shutdown. Vetro checks power permission again when standby is requested. An unconfirmed command is not automatically repeated, and an expired alarm is not replayed at a later startup.
+**Keep watching**, Back, leaving during the countdown, or **Vetro controls → Cancel sleep timer** cancels the pending shutdown. An unconfirmed command is never automatically repeated. Native Sources continues to use Tizen's TVWindow API.
 
-Garage Home starts its own small reply service only when a control is used. Requests travel through Tizen's app-identified MessagePort API; the local service only retrieves replies, which the widget authenticates. Garage Home does not start Vetro, read its pairing code, or require an owner token for these controls. If access is denied or unavailable, the control reports the problem without using a privileged fallback.
-
-Ordinary app browsing and launching continue through Tizen. Samsung-specific launch fallbacks and the phone remote depend on the APIs available in the installed Vetro version; app-control permissions do not grant unrestricted remote keys or protected Samsung shortcuts.
+The local service accepts only fixed controls from its authenticated local widget channel. It binds outgoing requests to the TV's own address, accepts no arbitrary destination or command, and does not start Vetro. Ordinary app browsing and launching use Tizen.
 
 The Garage-specific Vetro fork also provides pairing and Garage Player’s phone playlist inbox and playlist proxy. Its independent Home/startup automation can launch Garage Home even when the widget itself has no startup registration. Keep those external assignments disabled when using Garage Home manually.
 

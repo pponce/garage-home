@@ -37,7 +37,7 @@
         }
         function remember(status) {
             if (!status || ['approved','unapproved','pending'].indexOf(status.state) < 0 ||
-                status.scopes !== undefined && !Array.isArray(status.scopes)) throw fault('invalid_reply','Invalid permission status.');
+                status.scopes !== undefined && !Array.isArray(status.scopes)) throw fault('invalid_reply','Invalid connection status.');
             api.state = status.state; api.scopes = (status.scopes || []).slice();
             return status;
         }
@@ -114,10 +114,10 @@
         };
         api.errorMessage = function (error) {
             var messages = {
-                disabled:'Turn on App access in Vetro, then connect from Vetro controls.',
-                permission_denied:'Open Vetro controls, request access and approve it in Vetro.',
-                identity_changed:'Garage Home needs approval again. Open Vetro controls and request access.',
-                unavailable:'Open Vetro and check App permissions, then try again.',
+                disabled:'Open Vetro and connect root, then connect from Vetro controls.',
+                permission_denied:'Open Vetro and check the connection before trying again.',
+                identity_changed:'Reconnect from Vetro controls.',
+                unavailable:'Open Vetro and connect root, then try again.',
                 busy:'Wait for the current control to finish.',
                 not_allowed:'Vetro does not permit this operation for that app.',
                 brightness_off:'TV brightness controls are off.',

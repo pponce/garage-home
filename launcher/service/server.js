@@ -1,4 +1,4 @@
-// This loopback service retrieves signed replies only. Operations stay in the widget's MessagePort.
+// Local widget requests use a fixed set of stock Vetro operations.
 'use strict';
 var http = require('http');
 var crypto = require('crypto');
@@ -15,6 +15,7 @@ function create(options) {
         key = match && match[1];
     }
     if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw Error('Local reply key unavailable');
+    var stock = options.stock || require('./vetro-stock').create();
     var reader = options.reader || createReader(), active = 0, count = 0, since = Date.now();
     var server = http.createServer(function (req, res) {
         function send(status, body) {
@@ -33,10 +34,24 @@ function create(options) {
                 'Access-Control-Allow-Headers':'X-Garage-Key','Cache-Control':'no-store'});
             res.end(); return;
         }
+        if (req.method === 'OPTIONS' && origin === 'null' && req.url === '/stock' &&
+            req.headers['access-control-request-method'] === 'POST' &&
+            String(req.headers['access-control-request-headers']||'').toLowerCase().split(',').map(function(x){return x.trim();}).sort().join(',') === 'content-type,x-garage-key') {
+            res.writeHead(204,{'Access-Control-Allow-Origin':'null','Access-Control-Allow-Methods':'POST','Access-Control-Allow-Headers':'X-Garage-Key, Content-Type'});res.end();return;
+        }
         var given = req.headers['x-garage-key'];
         if (typeof given !== 'string' || !/^[a-f0-9]{64}$/.test(given) ||
             !crypto.timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(key, 'hex')))
             return send(403, {error:'local_only'});
+        if (req.url === '/stock' && req.method === 'POST') {
+            if (req.headers['content-type'] !== 'application/json' || active) return send(400,{error:'busy'});
+            active++; var body='', completed=false, timer=setTimeout(function(){finish(408,{error:'timeout'});},70000);
+            function finish(status,value){if(completed)return;completed=true;active--;clearTimeout(timer);send(status,value);}
+            req.on('data',function(b){body+=b;if(body.length>2048){finish(413,{error:'size'});req.resume();}});
+            req.on('error',function(){finish(400,{error:'request'});});
+            req.on('end',function(){if(completed)return;var p;try{p=JSON.parse(body);if(!p||typeof p.method!=='string'||!p.params||typeof p.params!=='object'||Array.isArray(p.params))throw Error();}catch(_){finish(400,{error:'request'});return;}
+                stock.call(p.method,p.params).then(function(r){finish(200,r);},function(e){finish(502,{error:'unavailable',submitted:e.submitted===false?false:null});});});return;
+        }
         if (req.method !== 'GET' || req.headers['transfer-encoding'] ||
             req.headers['content-length'] && req.headers['content-length'] !== '0')
             return send(405, {error:'get_only'});
@@ -50,7 +65,7 @@ function create(options) {
             active--; send(reply.status, reply.body);
         }, function () { active--; send(502, {error:'reply_unavailable'}); });
     });
-    server.timeout = 5000;
+    server.timeout = 75000;
     server.headersTimeout = 5000;
     server.maxHeadersCount = 20;
     return {

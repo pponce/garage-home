@@ -14,7 +14,7 @@ FILES = (
     "config.xml", "index.html", "style.css", "app.js", "qrcode.js", "app-icon.png", "logo.png",
     "vetro-access-client.js", "vetro-transport.js", "vetro-controls.js", "sleep-timer.js", "tv-sources.js",
     "vendor/sha256.js", "vendor/sha256.LICENSE.txt", "vendor/VETRO-LICENSE.txt", "vendor/GLASS-LICENSE.txt",
-    "service/index.js", "service/server.js", "service/vetro-replies.js", "service/local-addresses.js",
+    "service/index.js", "service/server.js", "service/vetro-replies.js", "service/local-addresses.js", "service/vetro-stock.js",
 )
 NS = {"t": "http://tizen.org/ns/widgets", "w": "http://www.w3.org/ns/widgets"}
 

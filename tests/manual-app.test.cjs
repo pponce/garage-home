@@ -33,10 +33,9 @@ async function mockControls(page) {
     window.removedAlarms = [];
     window.sleepRequest = null;
     window.GarageVetroTransport = {start:()=>Promise.resolve(),readReply:()=>Promise.reject()};
-    window.VetroAppAccess = function () {
-      this.call = async (method,params) => {
+    window.GarageVetroTransport.call = async (method,params) => {
         window.vetroCalls.push({method,params});
-        if(method === 'access.request') return {state:'pending',scopes:[]};
+        if(method === 'access.request') return {state:'approved',scopes:window.grants};
         if(method === 'access.status') return {state:'approved',scopes:window.grants};
         const needed = {'audio.key':'remote.audio','tasks.list':'tasks.read','tasks.stop':'tasks.stop',
           'power.off':'power.off','brightness.read':'picture.brightness','brightness.set':'picture.brightness'};
@@ -47,7 +46,6 @@ async function mockControls(page) {
         if(method === 'brightness.read') return {value:20,min:0,max:50};
         if(method === 'brightness.set') return {ok:true,verified:true,value:params.value};
         return {ok:true,submitted:true};
-      };
     };
     window.tizen.AlarmRelative = function(seconds){this.seconds=seconds;};
     window.tizen.ApplicationControl = function(op,a,b,c,data){this.data=data;};
@@ -76,7 +74,7 @@ async function assertSheetFits(page) {
   assert.ok(box && box.x>=60 && box.y>=60 && box.x+box.width<=1860 && box.y+box.height<=1020,
     'the controls sheet fits within the TV screen margins');
 }
-test('remote control settings request only base permissions and brightness requires an explicit opt-in',async()=>{
+test('remote control settings select base controls and brightness requires an explicit opt-in',async()=>{
   const {page,errors}=await openApp(false);
   try{
     await mockControls(page);
@@ -108,7 +106,7 @@ test('remote control settings request only base permissions and brightness requi
     assert.deepEqual(errors,[]);
   }finally{await page.close();}
 });
-test('mute uses scoped audio and running apps require confirmed close before a success message',async()=>{
+test('mute uses the local adapter and running apps require confirmed close before a success message',async()=>{
   const {page,errors}=await openApp(false);
   try{
     await mockControls(page);
