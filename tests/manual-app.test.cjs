@@ -124,14 +124,14 @@ test('mute uses the local adapter and running apps require confirmed close befor
     assert.deepEqual(errors,[]);
   }finally{await page.close();}
 });
-test('sleep needs power permission; cancel and backgrounding prevent countdown shutdown',async()=>{
+test('sleep checks control availability; cancel and backgrounding prevent countdown shutdown',async()=>{
   const {page,errors}=await openApp(false,true);
   try{
     await mockControls(page);
     await page.clock.fastForward(2000);
     await page.evaluate(()=>{window.grants=['tasks.read'];});
     await activateControl(page,'sleep');
-    await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('approve'));
+    await page.waitForFunction(()=>document.getElementById('toast').textContent.includes('connection'));
     assert.equal(await page.evaluate(()=>window.alarmCalls.length),0);
     await page.evaluate(()=>{window.grants.push('power.off');});
     await activateControl(page,'sleep');
